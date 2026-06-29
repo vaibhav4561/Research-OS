@@ -49,11 +49,12 @@ def run_research_pipeline(topic : str) -> dict:
         f"DETAILED SCRAPED CONTENT : \n {state['scraped_content']}"
     )
 
-    state["report"] = writer_chain.invoke({
-        "topic" : topic,
-        "research" : research_combined
+    writer_response = writer_chain.invoke({
+        "topic": topic,
+        "research": research_combined
     })
 
+    state["report"] = str(writer_response)
     print("\n Final Report\n",state['report'])
 
     #step 4 - critic chain
@@ -62,9 +63,11 @@ def run_research_pipeline(topic : str) -> dict:
     print("step 4 - critic is reviewing the report ")
     print("="*50)
 
-    state["feedback"] = critic_chain.invoke({
-        "report":state['report']
+    critic_response = critic_chain.invoke({
+        "report": state["report"]
     })
+
+    state["feedback"] = str(critic_response)
 
     print("\n critic report \n", state['feedback'])
 
