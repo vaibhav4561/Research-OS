@@ -18,8 +18,11 @@ def web_search(query: str) -> str:
     and recent updates.
     """
 
-    response = tavily.search(query = query, num_results = 5 )
-
+    try:
+        response = tavily.search(query=query, num_results=5)
+    except Exception as e:
+        print("Tavily Error:", e)
+        raise
     results = []
 
     for item in response['results']:

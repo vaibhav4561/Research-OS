@@ -2,12 +2,14 @@ import streamlit as st
 import time
 import requests
 
+FASTAPI_URL = "http://127.0.0.1:8000"
+
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="ResearchOS",
     page_icon="🔬",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 # ── Global CSS ─────────────────────────────────────────────────────────────────
@@ -169,6 +171,11 @@ for k in ["running", "done", "state", "elapsed", "error"]:
     if k not in st.session_state:
         st.session_state[k] = None if k in ("state", "error") else False
 
+# Load research history
+try:
+    history = requests.get(f"{FASTAPI_URL}/research/history").json()
+except Exception:
+    history = []
 
 # ── Header ───────────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -179,144 +186,189 @@ st.markdown("""
 st.markdown('<hr class="rule">', unsafe_allow_html=True)
 
 
-# ── Input row ────────────────────────────────────────────────────────────────────
-col_in, col_btn = st.columns([5, 1], gap="medium")
-with col_in:
-    topic = st.text_input("RESEARCH TOPIC", placeholder="e.g. Quantum computing breakthroughs in 2025")
-with col_btn:
-    st.markdown("<br>", unsafe_allow_html=True)
-    run_clicked = st.button("▶  Run", use_container_width=True)
+# ── Main Layout ───────────────────────────────────────────────────────────────
+left, right = st.columns([1, 3], gap="large")
+
+# =========================
+# LEFT PANEL (History)
+# =========================
+with left:
+    with st.expander("📚 Research History", expanded=False):
+
+        if not history:
+            st.info("No reports found.")
+
+        else:
+            for report in history:
+                created = report["created_at"][:10]
+
+                label = f"{report['topic'][:28]}\n📅 {created}"
+
+                if st.button(
+                    label,
+                    key=f"history_{report['id']}",
+                    use_container_width=True
+                ):
+
+                    report_data = requests.get(
+                        f"{FASTAPI_URL}/research/history/{report['id']}"
+                    ).json()
+
+                    st.session_state.state = report_data
+                    st.session_state.done = True
+                    st.session_state.running = False
+                    st.session_state.error = None
+
+# =========================
+# RIGHT PANEL (Main App)
+# =========================
+with right:
+
+    col_in, col_btn = st.columns([5, 1], gap="medium")
+
+    with col_in:
+        topic = st.text_input(
+            "RESEARCH TOPIC",
+            placeholder="e.g. Quantum computing breakthroughs in 2025"
+        )
+
+    with col_btn:
+        st.markdown("<br>", unsafe_allow_html=True)
+        run_clicked = st.button("▶ Run", use_container_width=True)
 
 
 # ── Pipeline execution ───────────────────────────────────────────────────────────
-if run_clicked and topic.strip():
-    st.session_state.running = True
-    st.session_state.done    = False
-    st.session_state.state   = None
-    st.session_state.error   = None
+with right:
+    col_in, col_btn = st.columns([5, 1], gap="medium")
 
-    st.markdown('<hr class="rule">', unsafe_allow_html=True)
-    st.markdown('<div class="section-heading">⬡ Pipeline</div>', unsafe_allow_html=True)
+    if run_clicked and topic.strip():
+        st.session_state.running = True
+        st.session_state.done    = False
+        st.session_state.state   = None
+        st.session_state.error   = None
 
-    placeholders = [st.empty() for _ in range(4)]
-    steps = [
-        ("🔍", "Search Agent",  "querying web for recent, reliable sources"),
-        ("📖", "Reader Agent",  "scraping top URL for deeper content"),
-        ("✍️",  "Writer Chain",  "synthesising findings into a structured report"),
-        ("🧠", "Critic Chain",  "reviewing report quality & accuracy"),
-    ]
+        st.markdown('<hr class="rule">', unsafe_allow_html=True)
+        st.markdown('<div class="section-heading">⬡ Pipeline</div>', unsafe_allow_html=True)
 
-    def render_steps(active):
-        for i, (icon, title, meta) in enumerate(steps):
-            s = "done" if i < active else "running" if i == active else "idle"
-            with placeholders[i]:
-                step_card(icon, title, meta, s, str(i))
+        placeholders = [st.empty() for _ in range(4)]
+        steps = [
+            ("🔍", "Search Agent",  "querying web for recent, reliable sources"),
+            ("📖", "Reader Agent",  "scraping top URL for deeper content"),
+            ("✍️",  "Writer Chain",  "synthesising findings into a structured report"),
+            ("🧠", "Critic Chain",  "reviewing report quality & accuracy"),
+        ]
 
-    spinner_ph = st.empty()
-    t0 = time.time()
+        def render_steps(active):
+            for i, (icon, title, meta) in enumerate(steps):
+                s = "done" if i < active else "running" if i == active else "idle"
+                with placeholders[i]:
+                    step_card(icon, title, meta, s, str(i))
 
-    try:
+        spinner_ph = st.empty()
+        t0 = time.time()
 
-        with st.spinner("Research pipeline is running..."):
-            response = requests.post(
-                "http://127.0.0.1:8000/research/",
-                json={
-                    "query": topic
-                }
-            )
+        try:
 
-        response.raise_for_status()
+            with st.spinner("Research pipeline is running..."):
+                response = requests.post(
+                    f"{FASTAPI_URL}/research/",
+                    json={
+                        "query": topic
+                    }
+                )
 
-        data = response.json()
+            response.raise_for_status()
 
-        search_results = data["search_results"]
-        scraped_content = data["scraped_content"]
-        report = data["report"]
-        feedback = data["feedback"]
+            data = response.json()
 
-        st.session_state.state = {
-            "search_results": search_results,
-            "scraped_content": scraped_content,
-            "report": report,
-            "feedback": feedback,
-        }
-        s = st.session_state.state
+            search_results = data["search_results"]
+            scraped_content = data["scraped_content"]
+            report = data["report"]
+            feedback = data["feedback"]
 
-        st.session_state.elapsed = round(time.time() - t0, 1)
-        st.session_state.done = True
-        st.session_state.running = False
+            st.session_state.state = {
+                "search_results": search_results,
+                "scraped_content": scraped_content,
+                "report": report,
+                "feedback": feedback,
+            }
+            s = st.session_state.state
 
-    except Exception as e:
-        spinner_ph.empty()
-        st.session_state.error   = str(e)
-        st.session_state.running = False
+            st.session_state.elapsed = round(time.time() - t0, 1)
+            st.session_state.done = True
+            st.session_state.running = False
 
-elif run_clicked:
-    st.warning("Please enter a research topic first.")
+        except Exception as e:
+            spinner_ph.empty()
+            st.session_state.error   = str(e)
+            st.session_state.running = False
 
-
-# ── Error ────────────────────────────────────────────────────────────────────────
-if st.session_state.error:
-    st.markdown(f"""
-    <div class="step-card error" style="margin-top:1.5rem;">
-        <div class="step-header">
-            <span class="step-icon">✕</span>
-            <span class="step-title">Pipeline error</span>
-        </div>
-        <div class="step-meta" style="color:#f25c54;">{st.session_state.error}</div>
-    </div>""", unsafe_allow_html=True)
+    elif run_clicked:
+        st.warning("Please enter a research topic first.")
 
 
-# ── Results ───────────────────────────────────────────────────────────────────────
-if st.session_state.done and st.session_state.state:
-    s       = st.session_state.state
-    elapsed = st.session_state.elapsed
-    wc      = len(s.get("report", "").split())
-    sc      = len(s.get("scraped_content", "").split())
-
-    st.markdown(f'<div class="success-bar">✓ &nbsp; Pipeline completed in {elapsed}s — all 4 stages passed</div>',
-                unsafe_allow_html=True)
-
-    st.markdown(f"""
-    <div class="metric-row">
-        <div class="metric-pill"><div class="metric-val">{elapsed}s</div><div class="metric-key">Total time</div></div>
-        <div class="metric-pill"><div class="metric-val">{wc}</div><div class="metric-key">Report words</div></div>
-        <div class="metric-pill"><div class="metric-val">{sc}</div><div class="metric-key">Scraped words</div></div>
-        <div class="metric-pill"><div class="metric-val">4</div><div class="metric-key">Stages passed</div></div>
-    </div>""", unsafe_allow_html=True)
-
-    with st.expander("🔍  Search Results  ·  raw output", expanded=False):
-        output_panel("SEARCH AGENT OUTPUT", s.get("search_results", "—"))
-
-    with st.expander("📖  Scraped Content  ·  raw output", expanded=False):
-        output_panel("READER AGENT OUTPUT", s.get("scraped_content", "—"))
-
-    st.markdown('<hr class="rule">', unsafe_allow_html=True)
-
-    st.markdown('<div class="section-heading">✍️  Final Report</div>', unsafe_allow_html=True)
-    output_panel("GENERATED REPORT", s.get("report", "—"), "report-box")
-
-    st.markdown('<div class="section-heading" style="margin-top:1.5rem;">🧠  Critic Feedback</div>',
-                unsafe_allow_html=True)
-    output_panel("QUALITY REVIEW", s.get("feedback", "—"), "feedback-box")
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    c1, c2, _ = st.columns([1, 1, 4], gap="small")
-    with c1:
-        st.download_button("⬇  Report", s.get("report",""),
-            file_name=f"report_{topic[:30].replace(' ','_')}.txt", mime="text/plain", use_container_width=True)
-    with c2:
-        full = (f"TOPIC: {topic}\n\n{'='*60}\nSEARCH RESULTS\n{'='*60}\n{s.get('search_results','')}\n\n"
-                f"{'='*60}\nSCRAPED CONTENT\n{'='*60}\n{s.get('scraped_content','')}\n\n"
-                f"{'='*60}\nFINAL REPORT\n{'='*60}\n{s.get('report','')}\n\n"
-                f"{'='*60}\nCRITIC FEEDBACK\n{'='*60}\n{s.get('feedback','')}\n")
-        st.download_button("⬇  Full Export", full,
-            file_name=f"full_{topic[:30].replace(' ','_')}.txt", mime="text/plain", use_container_width=True)
+    # ── Error ────────────────────────────────────────────────────────────────────────
+    if st.session_state.error:
+        st.markdown(f"""
+        <div class="step-card error" style="margin-top:1.5rem;">
+            <div class="step-header">
+                <span class="step-icon">✕</span>
+                <span class="step-title">Pipeline error</span>
+            </div>
+            <div class="step-meta" style="color:#f25c54;">{st.session_state.error}</div>
+        </div>""", unsafe_allow_html=True)
 
 
-# ── Idle hint ─────────────────────────────────────────────────────────────────────
-if not st.session_state.done and not st.session_state.running and not st.session_state.error:
-    st.markdown("""
-    <div style="margin-top:3rem;text-align:center;color:#1e2d3d;font-size:0.75rem;letter-spacing:0.12em;">
-        ↑ &nbsp; ENTER A TOPIC AND PRESS RUN TO START THE PIPELINE
-    </div>""", unsafe_allow_html=True)
+    # ── Results ───────────────────────────────────────────────────────────────────────
+    if st.session_state.done and st.session_state.state:
+        s       = st.session_state.state
+        elapsed = st.session_state.elapsed
+        wc      = len(s.get("report", "").split())
+        sc      = len(s.get("scraped_content", "").split())
+
+        st.markdown(f'<div class="success-bar">✓ &nbsp; Pipeline completed in {elapsed}s — all 4 stages passed</div>',
+                    unsafe_allow_html=True)
+
+        st.markdown(f"""
+        <div class="metric-row">
+            <div class="metric-pill"><div class="metric-val">{elapsed}s</div><div class="metric-key">Total time</div></div>
+            <div class="metric-pill"><div class="metric-val">{wc}</div><div class="metric-key">Report words</div></div>
+            <div class="metric-pill"><div class="metric-val">{sc}</div><div class="metric-key">Scraped words</div></div>
+            <div class="metric-pill"><div class="metric-val">4</div><div class="metric-key">Stages passed</div></div>
+        </div>""", unsafe_allow_html=True)
+
+        with st.expander("🔍  Search Results  ·  raw output", expanded=False):
+            output_panel("SEARCH AGENT OUTPUT", s.get("search_results", "—"))
+
+        with st.expander("📖  Scraped Content  ·  raw output", expanded=False):
+            output_panel("READER AGENT OUTPUT", s.get("scraped_content", "—"))
+
+        st.markdown('<hr class="rule">', unsafe_allow_html=True)
+
+        st.markdown('<div class="section-heading">✍️  Final Report</div>', unsafe_allow_html=True)
+        output_panel("GENERATED REPORT", s.get("report", "—"), "report-box")
+
+        st.markdown('<div class="section-heading" style="margin-top:1.5rem;">🧠  Critic Feedback</div>',
+                    unsafe_allow_html=True)
+        output_panel("QUALITY REVIEW", s.get("feedback", "—"), "feedback-box")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        c1, c2, _ = st.columns([1, 1, 4], gap="small")
+        with c1:
+            st.download_button("⬇  Report", s.get("report",""),
+                file_name=f"report_{topic[:30].replace(' ','_')}.txt", mime="text/plain", use_container_width=True)
+        with c2:
+            full = (f"TOPIC: {topic}\n\n{'='*60}\nSEARCH RESULTS\n{'='*60}\n{s.get('search_results','')}\n\n"
+                    f"{'='*60}\nSCRAPED CONTENT\n{'='*60}\n{s.get('scraped_content','')}\n\n"
+                    f"{'='*60}\nFINAL REPORT\n{'='*60}\n{s.get('report','')}\n\n"
+                    f"{'='*60}\nCRITIC FEEDBACK\n{'='*60}\n{s.get('feedback','')}\n")
+            st.download_button("⬇  Full Export", full,
+                file_name=f"full_{topic[:30].replace(' ','_')}.txt", mime="text/plain", use_container_width=True)
+
+
+    # ── Idle hint ─────────────────────────────────────────────────────────────────────
+    if not st.session_state.done and not st.session_state.running and not st.session_state.error:
+        st.markdown("""
+        <div style="margin-top:3rem;text-align:center;color:#1e2d3d;font-size:0.75rem;letter-spacing:0.12em;">
+            ↑ &nbsp; ENTER A TOPIC AND PRESS RUN TO START THE PIPELINE
+        </div>""", unsafe_allow_html=True)
