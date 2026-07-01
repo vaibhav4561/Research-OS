@@ -1,8 +1,12 @@
 import streamlit as st
 import time
 import requests
+import os
 
-FASTAPI_URL = "http://127.0.0.1:8000"
+FASTAPI_URL = os.getenv(
+    "FASTAPI_URL",
+    "https://YOUR-BACKEND.onrender.com"
+)
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
