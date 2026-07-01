@@ -5,7 +5,7 @@ import os
 
 FASTAPI_URL = os.getenv(
     "FASTAPI_URL",
-    "https://YOUR-BACKEND.onrender.com"
+    "https://research-os-2.onrender.com"
 )
 
 # ── Page config ────────────────────────────────────────────────────────────────
